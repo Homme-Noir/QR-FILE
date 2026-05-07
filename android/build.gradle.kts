@@ -2,20 +2,28 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.ksp)
 }
 
 kotlin {
-    androidTarget()
+    androidTarget {
+        compilations.all {
+            @Suppress("DEPRECATION")
+            kotlinOptions {
+                jvmTarget = "17"
+            }
+        }
+    }
 }
 
 android {
     namespace = "com.qrfile"
-    compileSdk = libs.versions.androidCompileSdk.get().toInt()
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.qrfile"
-        minSdk = libs.versions.androidMinSdk.get().toInt()
-        targetSdk = libs.versions.androidTargetSdk.get().toInt()
+        minSdk = 26
+        targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
     }
@@ -51,7 +59,13 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
 
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.zxing.android)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    implementation(libs.datastore.preferences)
+    implementation(libs.navigation.compose)
 
     debugImplementation(libs.compose.ui.tooling)
 }

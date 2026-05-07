@@ -35,10 +35,10 @@ kotlin {
 
 android {
     namespace = "com.qrfile.shared"
-    compileSdk = libs.versions.androidCompileSdk.get().toInt()
+    compileSdk = 35
 
     defaultConfig {
-        minSdk = libs.versions.androidMinSdk.get().toInt()
+        minSdk = 26
     }
 
     compileOptions {

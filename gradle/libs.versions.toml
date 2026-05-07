@@ -15,8 +15,14 @@ tink-android = "1.15.0"
 nearby-connections = "19.1.0"
 
 # Storage
-hive = "2.2.3"
-hive-flutter = "1.1.0"
+room = "2.7.1"
+ksp = "2.1.0-1.0.29"
+
+# Settings persistence
+datastore = "1.1.1"
+
+# Navigation
+navigation = "2.8.5"
 
 # Android UI
 compose-bom = "2024.12.01"
@@ -45,8 +51,15 @@ tink-android = { module = "com.google.crypto.tink:tink-android", version.ref = "
 nearby-connections = { module = "com.google.android.gms:play-services-nearby", version.ref = "nearby-connections" }
 
 # Storage
-hive = { module = "io.hivedb:hive", version.ref = "hive" }
-hive-flutter = { module = "io.hivedb:hive_flutter", version.ref = "hive-flutter" }
+room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+
+# Settings persistence
+datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
+
+# Navigation
+navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
 
 # Android UI
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
@@ -71,3 +84,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 android-application = { id = "com.android.application", version.ref = "android-gradle-plugin" }
 android-library = { id = "com.android.library", version.ref = "android-gradle-plugin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

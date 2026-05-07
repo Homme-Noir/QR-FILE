@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+*/build/
+*.class
+
+# Local Android SDK config — never commit
+local.properties
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# macOS
+.DS_Store
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# iOS
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.ipa
