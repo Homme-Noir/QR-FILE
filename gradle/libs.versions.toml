@@ -1,0 +1,73 @@
+[versions]
+kotlin = "2.1.0"
+android-gradle-plugin = "8.5.0"
+android-compile-sdk = "35"
+android-min-sdk = "26"
+android-target-sdk = "35"
+
+coroutines = "1.9.0"
+serialization = "1.7.3"
+
+# Crypto
+tink-android = "1.15.0"
+
+# Networking
+nearby-connections = "19.1.0"
+
+# Storage
+hive = "2.2.3"
+hive-flutter = "1.1.0"
+
+# Android UI
+compose-bom = "2024.12.01"
+activity-compose = "1.9.3"
+lifecycle = "2.8.7"
+
+# QR / Barcode
+zxing-core = "3.5.3"
+zxing-android = "4.3.0"
+
+# Testing
+junit = "4.13.2"
+kotlin-test = "2.1.0"
+
+[libraries]
+# Kotlin
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+
+# Crypto
+tink-android = { module = "com.google.crypto.tink:tink-android", version.ref = "tink-android" }
+
+# Networking — Android
+nearby-connections = { module = "com.google.android.gms:play-services-nearby", version.ref = "nearby-connections" }
+
+# Storage
+hive = { module = "io.hivedb:hive", version.ref = "hive" }
+hive-flutter = { module = "io.hivedb:hive_flutter", version.ref = "hive-flutter" }
+
+# Android UI
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-material3 = { module = "androidx.compose.material3:material3" }
+activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
+lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+
+# QR
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing-core" }
+zxing-android = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxing-android" }
+
+# Testing
+junit = { module = "junit:junit", version.ref = "junit" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin-test" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+android-application = { id = "com.android.application", version.ref = "android-gradle-plugin" }
+android-library = { id = "com.android.library", version.ref = "android-gradle-plugin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

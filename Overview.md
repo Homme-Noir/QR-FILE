@@ -1,8 +1,8 @@
-# Smart Share & Scan App
+# QR-FILE
 
 ## Overview
-A cross-platform Flutter app that combines **QR/Barcode scanning & generation** with **offline file sharing** (via Wi-Fi Direct or Bluetooth).  
-The app acts as a **personal utility hub**, merging functionalities of a **QR manager** with an **offline sharing tool**, similar to **Xender/AirDrop**.
+A cross-platform Kotlin Multiplatform app that combines **QR/Barcode scanning & generation** with **offline file sharing** via Wi-Fi Aware and NFC.  
+The app bridges iOS and Android directly — no internet, no router, no accounts — using NFC tap or QR code for device pairing and Wi-Fi Aware for the actual transfer.
 
 ---
 
