@@ -13,6 +13,8 @@ kotlin {
         }
     }
 
+    jvm()
+
     iosArm64()
     iosSimulatorArm64()
 
@@ -20,15 +22,19 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.korlibs.krypto)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)
-            implementation(libs.tink.android)
             implementation(libs.nearby.connections)
             implementation(libs.zxing.core)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.network)
+            implementation(libs.okio)
         }
     }
 }

@@ -4,9 +4,11 @@ import android.app.Application
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.qrfile.QRFileApp
 import com.qrfile.ui.history.HistoryScreen
 import com.qrfile.ui.history.HistoryViewModel
@@ -16,6 +18,9 @@ import com.qrfile.ui.scanner.ScannerViewModel
 import com.qrfile.ui.scanner.ScannerViewModelFactory
 import com.qrfile.ui.settings.SettingsScreen
 import com.qrfile.ui.settings.SettingsViewModel
+import com.qrfile.ui.receive.ReceiveScreen
+import com.qrfile.ui.receive.ReceiveViewModel
+import com.qrfile.ui.receive.ReceiveViewModelFactory
 import com.qrfile.ui.sharing.SharingScreen
 import com.qrfile.ui.sharing.SharingViewModel
 import com.qrfile.ui.sharing.SharingViewModelFactory
@@ -25,6 +30,10 @@ sealed class Screen(val route: String) {
     data object Sharing : Screen("sharing")
     data object History : Screen("history")
     data object Settings : Screen("settings")
+    data object Receive : Screen("receive/{payloadB64}") {
+        const val ARG = "payloadB64"
+        fun createRoute(b64: String) = "receive/$b64"
+    }
 }
 
 @Composable
@@ -57,6 +66,22 @@ fun QRFileNavHost(settingsViewModel: SettingsViewModel) {
         }
         composable(Screen.Settings.route) {
             SettingsScreen(navController, settingsViewModel, db.transferRecordDao(), db.scanRecordDao())
+        }
+        composable(
+            route = Screen.Receive.route,
+            arguments = listOf(
+                navArgument(Screen.Receive.ARG) { type = NavType.StringType },
+            ),
+        ) { entry ->
+            val b64 = entry.arguments?.getString(Screen.Receive.ARG).orEmpty()
+            val vm = viewModel<ReceiveViewModel>(
+                viewModelStoreOwner = entry,
+                factory = ReceiveViewModelFactory(
+                    context.applicationContext as Application,
+                    db.transferRecordDao(),
+                ),
+            )
+            ReceiveScreen(navController, b64, vm)
         }
     }
 }

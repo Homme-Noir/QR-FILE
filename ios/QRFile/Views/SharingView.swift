@@ -1,17 +1,18 @@
 import SwiftUI
 
-// TODO Phase 2: file picker → build HandshakePayload → display QR code
-//               NFC CoreNFC tap-to-send (Phase 3)
-//               Wi-Fi Aware send/receive via shared KMP P2PTransport (Phase 2, iOS 19+)
+/// Sender UI: pick files and show handshake JSON (embed KMP `HandshakePayload` when the Xcode project links `shared`).
 struct SharingView: View {
+    @State private var hint =
+        "Wire the Kotlin Multiplatform `shared` framework (Gradle embedAndSignAppleFrameworkForXcode), then build `HandshakePayload` + QR here. Wi‑Fi Aware transport is bridged from Swift / Network.framework on iOS 19+."
+
     var body: some View {
-        VStack {
+        VStack(spacing: 16) {
             Text("File Sharing")
                 .font(.title2)
-            Text("Coming in Phase 2 (iOS 19 + Wi-Fi Aware)")
+            Text(hint)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding()
+                .padding(.horizontal)
         }
     }
 }

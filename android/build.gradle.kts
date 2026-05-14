@@ -67,5 +67,7 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.navigation.compose)
 
+    implementation(libs.kotlinx.coroutines.android)
+
     debugImplementation(libs.compose.ui.tooling)
 }

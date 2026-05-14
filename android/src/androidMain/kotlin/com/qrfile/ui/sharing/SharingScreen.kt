@@ -1,5 +1,7 @@
 package com.qrfile.ui.sharing
 
+import android.app.Activity
+import android.nfc.NfcAdapter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -19,23 +21,39 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.google.zxing.BarcodeFormat
 import com.journeyapps.barcodescanner.BarcodeEncoder
 import com.qrfile.handshake.HandshakePayload
+import com.qrfile.nfc.NfcHandshakeWriter
 import kotlinx.serialization.json.Json
 import java.io.File
 
 @Composable
 fun SharingScreen(navController: NavController, viewModel: SharingViewModel) {
     val uiState by viewModel.uiState.collectAsState()
+    val activity = LocalContext.current as? Activity
+    var waitingForNfcWrite by remember { mutableStateOf(false) }
+    var nfcWriteMessage by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(activity, waitingForNfcWrite) {
+        onDispose {
+            if (waitingForNfcWrite && activity != null) {
+                NfcAdapter.getDefaultAdapter(activity)?.disableReaderMode(activity)
+            }
+        }
+    }
 
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
@@ -92,6 +110,22 @@ fun SharingScreen(navController: NavController, viewModel: SharingViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                val direct = state.payload.tcpDirect
+                if (direct != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "LAN direct TCP: ${direct.host}:${direct.port}. Receivers on the same Wi‑Fi can use this (or the QR). Tap Send to accept a connection.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "No site-local IPv4 detected; this session uses Nearby only. Use Wi‑Fi with a private address to enable optional LAN TCP.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = {
                     viewModel.startSend(
@@ -100,13 +134,70 @@ fun SharingScreen(navController: NavController, viewModel: SharingViewModel) {
                     )
                 }) { Text("Send") }
                 Spacer(Modifier.height(8.dp))
+                val act = activity
+                if (act != null) {
+                    Button(
+                        onClick = {
+                            nfcWriteMessage = null
+                            waitingForNfcWrite = true
+                            val json = Json.encodeToString(HandshakePayload.serializer(), state.payload)
+                            NfcHandshakeWriter.writeJsonToTag(act, json) { result ->
+                                waitingForNfcWrite = false
+                                nfcWriteMessage = result.exceptionOrNull()?.message
+                                    ?: "Handshake written to tag."
+                            }
+                        },
+                        enabled = !waitingForNfcWrite && NfcAdapter.getDefaultAdapter(act)?.isEnabled == true,
+                    ) {
+                        Text(if (waitingForNfcWrite) "Hold tag near phone…" else "Write to NFC tag")
+                    }
+                    if (NfcAdapter.getDefaultAdapter(act) == null) {
+                        Text(
+                            "NFC not available on this device.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else if (NfcAdapter.getDefaultAdapter(act)?.isEnabled != true) {
+                        Text(
+                            "Turn on NFC in settings to write a tag.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    nfcWriteMessage?.let { msg ->
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            msg,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (msg.startsWith("Handshake")) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
                 TextButton(onClick = { viewModel.reset() }) { Text("Pick different files") }
             }
 
             is SharingUiState.Sending -> {
                 Text("Sending…", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(16.dp))
-                CircularProgressIndicator()
+                CircularProgressIndicator(
+                    progress = { state.progress },
+                    modifier = Modifier.fillMaxWidth(0.85f),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "${(state.progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = { viewModel.cancelActiveTransfer() }) {
+                    Text("Cancel")
+                }
             }
 
             is SharingUiState.Done -> {

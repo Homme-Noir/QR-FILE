@@ -8,6 +8,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.qrfile.handshake.HandshakePayload
+import com.qrfile.handshake.TcpDirect
+import com.qrfile.network.AndroidP2pHooks
 import com.qrfile.storage.TransferRecord
 import com.qrfile.storage.TransferRecordDao
 import com.qrfile.storage.toEntity
@@ -18,6 +20,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.Inet4Address
+import java.net.InetSocketAddress
+import java.net.NetworkInterface
+import java.net.ServerSocket
 import java.util.UUID
 
 sealed class SharingUiState {
@@ -37,30 +43,64 @@ class SharingViewModel(
     private val _uiState = MutableStateFlow<SharingUiState>(SharingUiState.Idle)
     val uiState: StateFlow<SharingUiState> = _uiState
 
+    /** Display name of the peer once Nearby reports a connection (receiver's model name, etc.). */
+    private var connectedPeerName: String? = null
+
+    override fun onCleared() {
+        manager.stop()
+        AndroidP2pHooks.closeParked()
+        super.onCleared()
+    }
+
     fun onFilesSelected(uris: List<Uri>) = viewModelScope.launch {
         val app = getApplication<Application>()
-        val tempFiles = withContext(Dispatchers.IO) {
-            uris.map { uri -> uri.toTempFile(app) }
+        val (tempFiles, payload) = withContext(Dispatchers.IO) {
+            AndroidP2pHooks.closeParked()
+            val files = uris.map { uri -> uri.toTempFile(app) }
+            val totalBytes = files.sumOf { it.length() }
+            val lanIp = localSiteLocalIpv4()
+            val tcpDirect = if (lanIp != null) {
+                val ss = ServerSocket()
+                ss.reuseAddress = true
+                ss.bind(InetSocketAddress("0.0.0.0", 0), 0)
+                AndroidP2pHooks.park(ss)
+                TcpDirect(host = lanIp, port = ss.localPort)
+            } else {
+                null
+            }
+            val payload = manager.prepareSend(
+                filePaths = files.map { it.absolutePath },
+                deviceName = Build.MODEL,
+                tcpDirect = tcpDirect,
+            ).copy(totalBytes = totalBytes)
+            files to payload
         }
-        val totalBytes = tempFiles.sumOf { it.length() }
-        val payload = manager.prepareSend(
-            filePaths = tempFiles.map { it.absolutePath },
-            deviceName = Build.MODEL,
-        ).copy(totalBytes = totalBytes)
         _uiState.value = SharingUiState.ReadyToShare(tempFiles, payload)
     }
 
     fun startSend(filePaths: List<String>, payload: HandshakePayload) = viewModelScope.launch {
+        connectedPeerName = null
         manager.send(filePaths, payload).collect { event ->
             when (event) {
-                is com.qrfile.network.TransportEvent.Connected ->
+                is com.qrfile.network.TransportEvent.Connected -> {
+                    connectedPeerName = event.remoteDeviceName
                     _uiState.value = SharingUiState.Sending(0f)
+                }
+                is com.qrfile.network.TransportEvent.Progress -> {
+                    val p = event.progress
+                    val frac = if (p.totalBytes > 0) {
+                        p.bytesTransferred.toFloat() / p.totalBytes.toFloat()
+                    } else {
+                        0f
+                    }
+                    _uiState.value = SharingUiState.Sending(frac.coerceIn(0f, 1f))
+                }
                 is com.qrfile.network.TransportEvent.Completed -> {
                     transferDao.insert(
                         TransferRecord(
                             id = UUID.randomUUID().toString(),
                             direction = TransferRecord.Direction.SENT,
-                            remoteDeviceName = event.savedPath,
+                            remoteDeviceName = connectedPeerName ?: payload.deviceName,
                             fileNames = filePaths.map { File(it).name },
                             totalBytes = filePaths.sumOf { File(it).length() },
                             timestampMs = System.currentTimeMillis(),
@@ -76,7 +116,18 @@ class SharingViewModel(
         }
     }
 
-    fun reset() { _uiState.value = SharingUiState.Idle }
+    fun cancelActiveTransfer() {
+        manager.stop()
+        if (_uiState.value is SharingUiState.Sending) {
+            _uiState.value = SharingUiState.Error("Cancelled")
+        }
+    }
+
+    fun reset() {
+        connectedPeerName = null
+        AndroidP2pHooks.closeParked()
+        _uiState.value = SharingUiState.Idle
+    }
 }
 
 class SharingViewModelFactory(
@@ -102,3 +153,14 @@ private fun Uri.toTempFile(context: android.content.Context): File {
     }
     return dest
 }
+
+private fun localSiteLocalIpv4(): String? =
+    runCatching {
+        NetworkInterface.getNetworkInterfaces().toList()
+            .asSequence()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.asSequence() }
+            .filterIsInstance<Inet4Address>()
+            .firstOrNull { !it.isLoopbackAddress && it.isSiteLocalAddress }
+            ?.hostAddress
+    }.getOrNull()

@@ -10,12 +10,20 @@ import kotlinx.serialization.Serializable
  * Serialized as JSON before encoding into QR / written to NFC NDEF record.
  */
 @Serializable
+data class TcpDirect(
+    val host: String,
+    val port: Int,
+)
+
+@Serializable
 data class HandshakePayload(
     val serviceId: String,       // Wi-Fi Aware service name, unique per transfer
     val sessionPassword: String, // single-use password for AES-GCM key derivation
     val deviceName: String,      // human-readable sender name (public, not secret)
     val fileCount: Int,          // how many files are queued for transfer
     val totalBytes: Long,        // total transfer size in bytes
+    /** When set (e.g. desktop), receivers may use direct TCP instead of Wi-Fi P2P. */
+    val tcpDirect: TcpDirect? = null,
 )
 
 enum class HandshakeMethod { NFC, QR_CODE }

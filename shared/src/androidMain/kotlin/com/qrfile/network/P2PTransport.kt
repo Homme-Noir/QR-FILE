@@ -18,10 +18,20 @@ import com.google.android.gms.nearby.connection.PayloadTransferUpdate
 import com.google.android.gms.nearby.connection.Strategy
 import com.qrfile.crypto.CryptoEngine
 import com.qrfile.handshake.HandshakePayload
+import com.qrfile.handshake.TcpDirect
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.withContext
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.File
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 actual class P2PTransport actual constructor() {
 
@@ -38,13 +48,49 @@ actual class P2PTransport actual constructor() {
     private var connectedEndpointId: String? = null
     private var receiveEncryptionKey: ByteArray? = null
 
-    // Sender-side callback: set by sendFiles(), invoked by the advertiser's PayloadCallback
+    private var tcpServerSocket: ServerSocket? = null
+    private var tcpSocket: Socket? = null
+    private var tcpInput: DataInputStream? = null
+    private var tcpOutput: DataOutputStream? = null
+
+    /** Nearby endpoint id → human-readable name from [ConnectionInfo] / [DiscoveredEndpointInfo]. */
+    private val endpointDisplayNames = ConcurrentHashMap<String, String>()
+
     private var onPayloadUpdate: ((PayloadTransferUpdate) -> Unit)? = null
 
-    // Receiver-side callback: invoked when a file is fully received and decrypted
-    private var onFileReceived: ((String) -> Unit)? = null
+    actual fun startAdvertising(payload: HandshakePayload): Flow<TransportEvent> {
+        val direct = payload.tcpDirect
+        if (direct != null) {
+            return tcpStartAdvertising(direct)
+        }
+        return nearbyStartAdvertising(payload)
+    }
 
-    actual fun startAdvertising(payload: HandshakePayload): Flow<TransportEvent> = callbackFlow {
+    private fun tcpStartAdvertising(direct: TcpDirect): Flow<TransportEvent> = callbackFlow {
+        try {
+            withContext(Dispatchers.IO) {
+                val ss = AndroidP2pHooks.takeParked(direct.port) ?: run {
+                    val s = ServerSocket()
+                    s.reuseAddress = true
+                    s.bind(InetSocketAddress("0.0.0.0", direct.port), 1)
+                    s
+                }
+                tcpServerSocket = ss
+                val s = ss.accept()
+                tcpSocket = s
+                tcpInput = DataInputStream(s.getInputStream())
+                tcpOutput = DataOutputStream(s.getOutputStream())
+                val peer = s.inetAddress?.hostAddress ?: direct.host
+                trySend(TransportEvent.Connected(peer))
+            }
+        } catch (e: Exception) {
+            trySend(TransportEvent.Failed(e.message ?: "TCP listen failed"))
+            close(e)
+        }
+        awaitClose { closeTcp() }
+    }
+
+    private fun nearbyStartAdvertising(payload: HandshakePayload): Flow<TransportEvent> = callbackFlow {
         val senderPayloadCallback = object : PayloadCallback() {
             override fun onPayloadReceived(endpointId: String, p: Payload) {}
             override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
@@ -54,13 +100,15 @@ actual class P2PTransport actual constructor() {
 
         val lifecycleCallback = object : ConnectionLifecycleCallback() {
             override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
+                endpointDisplayNames[endpointId] = info.endpointName
                 client.acceptConnection(endpointId, senderPayloadCallback)
             }
 
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
                 if (result.status.isSuccess) {
                     connectedEndpointId = endpointId
-                    trySend(TransportEvent.Connected(endpointId))
+                    client.stopAdvertising()
+                    trySend(TransportEvent.Connected(endpointDisplayNames[endpointId] ?: endpointId))
                 } else {
                     trySend(TransportEvent.Failed(result.status.statusMessage ?: "Connection failed"))
                 }
@@ -81,9 +129,49 @@ actual class P2PTransport actual constructor() {
         awaitClose { client.stopAdvertising() }
     }
 
-    actual fun startDiscovery(payload: HandshakePayload): Flow<TransportEvent> = callbackFlow {
+    actual fun startDiscovery(payload: HandshakePayload): Flow<TransportEvent> {
+        if (payload.tcpDirect != null) {
+            return tcpStartDiscovery(payload)
+        }
+        return nearbyStartDiscovery(payload)
+    }
+
+    private fun tcpStartDiscovery(payload: HandshakePayload): Flow<TransportEvent> = callbackFlow {
+        val direct = payload.tcpDirect!!
+        try {
+            withContext(Dispatchers.IO) {
+                val s = Socket()
+                s.connect(InetSocketAddress(direct.host, direct.port), 30_000)
+                tcpSocket = s
+                val inp = DataInputStream(s.getInputStream())
+                tcpInput = inp
+                tcpOutput = DataOutputStream(s.getOutputStream())
+                trySend(TransportEvent.Connected(payload.deviceName))
+                val key = crypto.deriveKey(payload.sessionPassword)
+                val downloads = appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                    ?: appContext.filesDir
+                repeat(payload.fileCount.coerceAtLeast(1)) {
+                    val len = inp.readLong()
+                    TcpP2pFraming.requireValidCiphertextLength(len)
+                    val enc = ByteArray(len.toInt())
+                    inp.readFully(enc)
+                    val plain = crypto.decrypt(enc, key)
+                    val dest = File(downloads, "recv_${UUID.randomUUID()}")
+                    dest.writeBytes(plain)
+                    trySend(TransportEvent.Completed(dest.absolutePath))
+                }
+            }
+        } catch (e: Exception) {
+            trySend(TransportEvent.Failed(e.message ?: "TCP receive failed"))
+            close(e)
+        }
+        awaitClose { closeTcp() }
+    }
+
+    private fun nearbyStartDiscovery(payload: HandshakePayload): Flow<TransportEvent> = callbackFlow {
         val key = crypto.deriveKey(payload.sessionPassword)
         receiveEncryptionKey = key
+        var filesRemaining = payload.fileCount.coerceAtLeast(1)
 
         val receiverPayloadCallback = object : PayloadCallback() {
             private val pendingFiles = mutableMapOf<Long, Payload>()
@@ -100,14 +188,16 @@ actual class P2PTransport actual constructor() {
 
                 try {
                     val plaintext = crypto.decrypt(ciphertextFile.readBytes(), encKey)
-                    val downloads = Environment.getExternalStoragePublicDirectory(
-                        Environment.DIRECTORY_DOWNLOADS
-                    )
+                    val downloads = appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                        ?: appContext.filesDir
                     val dest = File(downloads, ciphertextFile.name.removePrefix("enc_"))
                     dest.writeBytes(plaintext)
                     ciphertextFile.delete()
-                    onFileReceived?.invoke(dest.absolutePath)
                     trySend(TransportEvent.Completed(dest.absolutePath))
+                    filesRemaining--
+                    if (filesRemaining <= 0) {
+                        close()
+                    }
                 } catch (_: Exception) {
                     ciphertextFile.delete()
                 }
@@ -116,13 +206,15 @@ actual class P2PTransport actual constructor() {
 
         val lifecycleCallback = object : ConnectionLifecycleCallback() {
             override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
+                endpointDisplayNames[endpointId] = info.endpointName
                 client.acceptConnection(endpointId, receiverPayloadCallback)
             }
 
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
                 if (result.status.isSuccess) {
                     connectedEndpointId = endpointId
-                    trySend(TransportEvent.Connected(endpointId))
+                    client.stopDiscovery()
+                    trySend(TransportEvent.Connected(endpointDisplayNames[endpointId] ?: endpointId))
                 } else {
                     trySend(TransportEvent.Failed(result.status.statusMessage ?: "Connection failed"))
                 }
@@ -135,6 +227,7 @@ actual class P2PTransport actual constructor() {
 
         val discoveryCallback = object : EndpointDiscoveryCallback() {
             override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
+                endpointDisplayNames[endpointId] = info.endpointName
                 client.requestConnection(Build.MODEL, endpointId, lifecycleCallback)
             }
 
@@ -152,6 +245,29 @@ actual class P2PTransport actual constructor() {
     }
 
     actual fun sendFiles(filePaths: List<String>, encryptionKey: ByteArray): Flow<TransferProgress> = callbackFlow {
+        val out = tcpOutput
+        if (out != null) {
+            val totalBytes = filePaths.sumOf { File(it).length() }
+            var sentPlain = 0L
+            try {
+                withContext(Dispatchers.IO) {
+                    for (path in filePaths) {
+                        val plain = File(path).readBytes()
+                        val enc = crypto.encrypt(plain, encryptionKey)
+                        out.writeLong(enc.size.toLong())
+                        out.write(enc)
+                        sentPlain += plain.size
+                        trySend(TransferProgress(sentPlain.coerceAtMost(totalBytes), totalBytes))
+                    }
+                    out.flush()
+                }
+            } catch (e: Exception) {
+                close(e)
+            }
+            awaitClose { }
+            return@callbackFlow
+        }
+
         val endpointId = connectedEndpointId
         if (endpointId == null) {
             close(Exception("No connected endpoint"))
@@ -159,16 +275,32 @@ actual class P2PTransport actual constructor() {
         }
 
         val totalBytes = filePaths.sumOf { File(it).length() }
-        var totalSent = 0L
         val pendingPayloads = mutableMapOf<Long, File>()
+        val plaintextSizeByPayload = mutableMapOf<Long, Long>()
+        val ciphertextSizeByPayload = mutableMapOf<Long, Long>()
+        val transferredPerPayload = mutableMapOf<Long, Long>()
+
+        fun emitAggregateProgress() {
+            var plaintextProgress = 0L
+            for ((id, encFile) in pendingPayloads) {
+                val plainLen = plaintextSizeByPayload[id] ?: 0L
+                val encLen = ciphertextSizeByPayload[id] ?: encFile.length().coerceAtLeast(1L)
+                val sent = (transferredPerPayload[id] ?: 0L).coerceAtMost(encLen)
+                plaintextProgress += (plainLen.toDouble() * sent.toDouble() / encLen.toDouble()).toLong()
+            }
+            trySend(TransferProgress(plaintextProgress.coerceAtMost(totalBytes), totalBytes))
+        }
 
         onPayloadUpdate = { update ->
             when (update.status) {
                 PayloadTransferUpdate.Status.IN_PROGRESS -> {
-                    totalSent += update.bytesTransferred
-                    trySend(TransferProgress(totalSent.coerceAtMost(totalBytes), totalBytes))
+                    transferredPerPayload[update.payloadId] = update.bytesTransferred
+                    emitAggregateProgress()
                 }
                 PayloadTransferUpdate.Status.SUCCESS -> {
+                    transferredPerPayload[update.payloadId] =
+                        ciphertextSizeByPayload[update.payloadId] ?: 0L
+                    emitAggregateProgress()
                     pendingPayloads.remove(update.payloadId)?.delete()
                     if (pendingPayloads.isEmpty()) close()
                 }
@@ -186,6 +318,8 @@ actual class P2PTransport actual constructor() {
             tempFile.writeBytes(ciphertext)
             val payload = Payload.fromFile(tempFile)
             pendingPayloads[payload.id] = tempFile
+            plaintextSizeByPayload[payload.id] = original.length()
+            ciphertextSizeByPayload[payload.id] = tempFile.length()
             client.sendPayload(endpointId, payload)
         }
 
@@ -193,11 +327,22 @@ actual class P2PTransport actual constructor() {
     }
 
     actual fun stopAll() {
+        closeTcp()
         client.stopAdvertising()
         client.stopDiscovery()
         connectedEndpointId?.let { client.disconnectFromEndpoint(it) }
         connectedEndpointId = null
         onPayloadUpdate = null
-        onFileReceived = null
+        endpointDisplayNames.clear()
+    }
+
+    private fun closeTcp() {
+        runCatching { tcpOutput?.flush() }
+        runCatching { tcpSocket?.close() }
+        runCatching { tcpServerSocket?.close() }
+        tcpSocket = null
+        tcpServerSocket = null
+        tcpInput = null
+        tcpOutput = null
     }
 }

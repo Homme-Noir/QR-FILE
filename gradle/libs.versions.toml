@@ -7,12 +7,16 @@ android-target-sdk = "35"
 
 coroutines = "1.9.0"
 serialization = "1.7.3"
+krypto = "4.0.10"
+jetbrains-compose = "1.6.11"
 
 # Crypto
 tink-android = "1.15.0"
 
 # Networking
 nearby-connections = "19.1.0"
+ktor = "2.3.12"
+okio = "3.9.1"
 
 # Storage
 room = "2.7.1"
@@ -43,12 +47,15 @@ kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+korlibs-krypto = { module = "com.soywiz.korlibs.krypto:krypto", version.ref = "krypto" }
 
 # Crypto
 tink-android = { module = "com.google.crypto.tink:tink-android", version.ref = "tink-android" }
 
 # Networking — Android
 nearby-connections = { module = "com.google.android.gms:play-services-nearby", version.ref = "nearby-connections" }
+ktor-network = { module = "io.ktor:ktor-network", version.ref = "ktor" }
+okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 
 # Storage
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
@@ -85,3 +92,4 @@ android-application = { id = "com.android.application", version.ref = "android-g
 android-library = { id = "com.android.library", version.ref = "android-gradle-plugin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+jetbrains-compose = { id = "org.jetbrains.compose", version.ref = "jetbrains-compose" }

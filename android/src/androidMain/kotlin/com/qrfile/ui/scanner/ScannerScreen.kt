@@ -1,6 +1,7 @@
 package com.qrfile.ui.scanner
 
 import android.app.Activity
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -27,8 +29,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.google.zxing.integration.android.IntentIntegrator
+import com.qrfile.handshake.HandshakeJson
+import com.qrfile.handshake.HandshakePayload
 import com.qrfile.storage.ScanRecord
 import com.qrfile.storage.ScanRecordEntity
+import com.qrfile.ui.Screen
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,6 +43,23 @@ import java.util.UUID
 fun ScannerScreen(navController: NavController, viewModel: ScannerViewModel) {
     val context = LocalContext.current
     val scans by viewModel.scans.collectAsState()
+    val app = context.applicationContext as com.qrfile.QRFileApp
+    val nfcRaw by app.nfcHandshakeJson.collectAsState()
+
+    LaunchedEffect(nfcRaw) {
+        val raw = nfcRaw ?: return@LaunchedEffect
+        val handshake = runCatching {
+            HandshakeJson.decodeFromString(HandshakePayload.serializer(), raw)
+        }.getOrNull()
+        if (handshake != null) {
+            val b64 = Base64.encodeToString(
+                raw.toByteArray(Charsets.UTF_8),
+                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+            )
+            navController.navigate(Screen.Receive.createRoute(b64))
+        }
+        app.consumeNfcHandshakeJson()
+    }
 
     val scanLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -51,6 +73,16 @@ fun ScannerScreen(navController: NavController, viewModel: ScannerViewModel) {
                 timestampMs = System.currentTimeMillis(),
             )
             viewModel.saveScan(record)
+            val handshake = runCatching {
+                HandshakeJson.decodeFromString(HandshakePayload.serializer(), rawValue)
+            }.getOrNull()
+            if (handshake != null) {
+                val b64 = Base64.encodeToString(
+                    rawValue.toByteArray(Charsets.UTF_8),
+                    Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+                )
+                navController.navigate(Screen.Receive.createRoute(b64))
+            }
         }
     }
 

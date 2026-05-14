@@ -1,0 +1,21 @@
+name: QRFile
+options:
+  bundleIdPrefix: com.qrfile
+targets:
+  QRFile:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: QRFile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.qrfile.app
+        INFOPLIST_FILE: QRFile/Info.plist
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+    entitlements:
+      path: QRFile/QRFile.entitlements
+      properties:
+        com.apple.developer.nfc.readersession.formats:
+          - NDEF

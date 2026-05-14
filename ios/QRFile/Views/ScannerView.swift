@@ -1,14 +1,35 @@
 import SwiftUI
 
-// TODO Phase 1: AVCaptureSession-based QR/barcode scanner
-// On successful decode: categorise result, save ScanRecord via shared KMP storage module
 struct ScannerView: View {
+    @State private var status: String = "Scan a QR code or use NFC read."
+    @State private var lastPayload: String?
+    private let nfc = NfcReader()
+
     var body: some View {
-        VStack {
+        VStack(spacing: 16) {
             Text("Scanner")
                 .font(.title2)
-            Text("Coming in Phase 1")
+            Text(status)
+                .font(.footnote)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Read NFC handshake") {
+                nfc.onPayload = { text in
+                    lastPayload = text
+                    status = "Read NFC payload (\(text.count) chars)."
+                }
+                nfc.onError = { err in
+                    status = err
+                }
+                nfc.start()
+            }
+            if let lastPayload {
+                Text(lastPayload)
+                    .font(.caption2)
+                    .lineLimit(4)
+                    .textSelection(.enabled)
+            }
         }
+        .padding()
     }
 }
